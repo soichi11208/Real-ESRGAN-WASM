@@ -1,8 +1,7 @@
 # Real-ESRGAN WebGPU — WASM ブラウザアップスケーラー
 
-> Real-ESRGAN を **ONNX Runtime Web** 経由で WebAssembly (WASM) に変換し、**WebGPU** アクセラレーションでブラウザ上で完全クライアントサイド動作させます。
+Real-ESRGAN を **ONNX Runtime Web** 経由で WebAssembly (WASM) に変換し、**WebGPU** アクセラレーションでブラウザ上で完全クライアントサイド動作させます。
 
-![Real-ESRGAN WebGPU Demo](https://github.com/xororz/web-realesrgan/raw/master/src/assets/demo.jpg)
 
 ## 特徴
 
