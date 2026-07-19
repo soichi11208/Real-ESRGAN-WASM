@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Real-ESRGAN-WASM</title>
+<!-- GitHub Pages 等 COOP/COEP を送れないホスト向け。SW で自己付与して crossOriginIsolated を成立させる。
+     credentialless モードで外部モデル (HuggingFace 等) も fetch できるようにする。 -->
+<script>window.coi={coepCredentialless:()=>true,quiet:true};</script>
+<script src="coi-serviceworker.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#e6edf3;min-height:100vh;display:flex;flex-direction:column;align-items:center;background:#000 url(bg.png) no-repeat center/cover fixed}
+header{background:rgba(0,0,0,.85);border-bottom:1px solid #222;padding:14px 24px;width:100%;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;backdrop-filter:blur(8px)}
+header h1{font-size:17px;font-weight:600;color:#58a6ff}
+#privacy{font-size:11px;color:#8b949e}
+.container{flex:1;width:100%;max-width:720px;padding:24px;display:flex;flex-direction:column;align-items:center;gap:16px}
+.main-panel{width:100%;padding:24px;background:rgba(0,0,0,.55);backdrop-filter:blur(12px);display:flex;flex-direction:column;align-items:center;gap:16px}
+#dropzone{width:100%;height:260px;border:2px dashed rgba(255,255,255,.2);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;background:rgba(0,0,0,.3);transition:.2s;position:relative;overflow:hidden}
+#dropzone:hover,#dropzone.drag-over{border-color:#58a6ff;background:rgba(0,0,0,.5)}
+#dropzone .icon{font-size:40px;opacity:.6}
+#dropzone p{color:#e6edf3;font-size:14px}
+#dropzone input{display:none}
+#dropzone img.preview{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
+#controls{width:100%;display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:center}
+#controls select{background:rgba(0,0,0,.5);color:#e6edf3;border:1px solid #555;padding:9px 14px;font-size:13px;cursor:pointer}
+#controls button{background:rgba(0,0,0,.5);color:#e6edf3;border:1px solid #555;padding:9px 14px;font-size:13px;cursor:pointer}
+#controls button.primary{background:rgba(35,134,54,.85);border-color:#2ea043;font-weight:600}
+#controls button.primary:disabled{opacity:.4;cursor:not-allowed}
+#controls button.primary:hover:not(:disabled){background:#2ea043}
+.toggle-row{display:flex;align-items:center;gap:12px;font-size:13px;color:#ccc}
+.toggle-row label{cursor:pointer;display:flex;align-items:center;gap:8px;user-select:none}
+.toggle-row input[type=checkbox]{display:none}
+.toggle-row .slider{width:44px;height:22px;background:#444;position:relative;display:inline-block;cursor:pointer;transition:.2s;flex-shrink:0}
+.toggle-row .slider::after{content:'';width:18px;height:18px;background:#e6edf3;position:absolute;top:2px;left:2px;transition:.2s}
+.toggle-row input:checked+.slider{background:#58a6ff}
+.toggle-row input:checked+.slider::after{left:24px}
+#backendLabel{font-size:12px;color:#8b949e}
+#status{width:100%;font-size:13px;color:#e6edf3;text-align:center;min-height:22px}
+#status.error{color:#f85149}
+#status.success{color:#3fb950}
+#progress{width:100%;height:4px;background:rgba(255,255,255,.15);overflow:hidden;display:none}
+#progress div{height:100%;width:0%;background:#58a6ff;transition:width .3s}
+#result{width:100%;display:none;flex-direction:column;gap:12px}
+#result.visible{display:flex}
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.compare>div{background:rgba(0,0,0,.8);overflow:hidden;border:1px solid #333;backdrop-filter:blur(4px)}
+.compare>div .label{padding:6px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:#aaa;background:rgba(0,0,0,.3)}
+.compare>div img,.compare>div canvas{width:100%;height:auto;display:block}
+.btn-row{display:flex;gap:10px}
+.btn-row button{flex:1;background:rgba(0,0,0,.7);color:#e6edf3;border:1px solid #444;padding:10px;font-size:13px;cursor:pointer}
+.btn-row button.primary{background:rgba(35,134,54,.85);border-color:#2ea043}
+#modelInfo{font-size:12px;color:#888;text-align:center}
+footer{text-align:center;padding:16px;font-size:12px;color:#888;border-top:1px solid rgba(255,255,255,.1);width:100%;background:rgba(0,0,0,.7);backdrop-filter:blur(8px)}
+footer a{color:#58a6ff}
+</style>
+</head>
+<body>
+<header>
+  <h1>Real-ESRGAN-WASM</h1>
+  <div id="privacy">データはサーバーに送信されません</div>
+</header>
+<div class="container">
+  <div class="main-panel">
+    <div id="dropzone">
+      <div class="icon">+</div>
+      <p>画像をドラッグ または クリック</p>
+      <p style="font-size:12px">JPEG / PNG / WebP</p>
+      <input type="file" id="fileInput" accept="image/*">
+      <img class="preview" id="preview" style="display:none" alt="">
+    </div>
+    <div id="controls">
+      <select id="modelSelect">
+        <option value="x4">RealESRGAN x4</option>
+        <option value="x4fp16">RealESRGAN x4 fp16</option>
+        <option value="x2">RealESRGAN x2</option>
+        <option value="x2fp16">RealESRGAN x2 fp16</option>
+        <option value="x8">RealESRGAN x8</option>
+        <option value="x8fp16">RealESRGAN x8 fp16</option>
+      </select>
+      <button class="primary" id="upscaleBtn" disabled>アップスケール</button>
+    </div>
+    <div class="toggle-row">
+      <label><span>WASM</span><input type="checkbox" id="backendToggle"><span class="slider"></span><span>WebGPU</span></label>
+      <span id="backendLabel"></span>
+    </div>
+    <div id="modelInfo"></div>
+    <div id="progress"><div id="progressFill"></div></div>
+    <div id="status">初期化中...</div>
+  </div>
+  <div id="result">
+    <div class="compare">
+      <div><div class="label">入力</div><img id="inputDisplay" alt="input"></div>
+      <div><div class="label">出力</div><canvas id="outputCanvas"></canvas></div>
+    </div>
+    <div class="btn-row">
+      <button class="primary" id="downloadBtn">PNG 保存</button>
+      <button id="resetBtn">やり直す</button>
+    </div>
+  </div>
+</div>
+<footer><a href="https://github.com/xinntao/Real-ESRGAN">Real-ESRGAN</a> by Tencent ARC - <a href="https://onnxruntime.ai">ONNX Runtime Web</a> - <a href="https://github.com/gzuidhof/coi-serviceworker">coi-serviceworker</a> - <a href="THIRD-PARTY-NOTICES.md">Licenses</a></footer>
+
+<script>
+// ORT ローダー: serve.py が同期しておいた ./ort/ を優先、無ければ CDN。
+// wasmPaths は dynamic import() に渡されるため、"./" or 絶対 URL でないと
+// bare module specifier 扱いで弾かれる。ここでは絶対 URL を作る。
+(function(){
+  const localBase=new URL('ort/', location.href).href;
+  const cdnBase='https://cdn.jsdelivr.net/npm/onnxruntime-web@1.21.0/dist/';
+  const s=document.createElement('script');
+  s.src=localBase+'ort.webgpu.min.js';
+  s.onerror=()=>{
+    console.warn('ローカル ORT が無いので CDN にフォールバック');
+    window.__ORT_BASE__=cdnBase;
+    const c=document.createElement('script');
+    c.src=cdnBase+'ort.webgpu.min.js'; c.crossOrigin='anonymous';
+    c.onload=()=>window.__ortReady&&window.__ortReady();
+    document.head.appendChild(c);
+  };
+  s.onload=()=>{
+    window.__ORT_BASE__=localBase;
+    window.__ortReady&&window.__ortReady();
+  };
+  document.head.appendChild(s);
+})();
+</script>
+<script>
+// メイン初期化は ORT がロードされてから
+window.__ortReady=function(){
+  try{ main(); }
+  catch(e){
+    console.error('main() 初期化失敗:',e);
+    const st=document.getElementById('status');
+    if(st){ st.textContent='初期化失敗: '+e.message+' (F12 で詳細)'; st.className='error'; }
+  }
+};
+function main(){
+// ── DOM ──
+const D = id => document.getElementById(id);
+const dropzone=D('dropzone'), fileInput=D('fileInput'), preview=D('preview');
+const upscaleBtn=D('upscaleBtn'), statusEl=D('status'), progress=D('progress'), pf=D('progressFill');
+const result=D('result'), inputDisplay=D('inputDisplay'), outC=D('outputCanvas');
+const dlBtn=D('downloadBtn'), resetBtn=D('resetBtn'), toggle=D('backendToggle'), bl=D('backendLabel');
+const ms=D('modelSelect'), mi=D('modelInfo');
+const WASM=window.__ORT_BASE__||new URL('ort/',location.href).href;
+
+// SharedArrayBuffer が使える (=Cross-Origin Isolated) 時だけ複数スレッド。
+// serve.py のような COOP/COEP 対応サーバーで開いている必要がある。
+const CAN_THREAD = (typeof SharedArrayBuffer!=='undefined') && self.crossOriginIsolated;
+const THREADS = CAN_THREAD ? (navigator.hardwareConcurrency||4) : 1;
+
+// タイルサイズ。URL の ?tile=192 で override 可 (dynamic axes モデルなので任意)。
+// 小さすぎるとタイルあたりの計算量が pthread の起動オーバーヘッドに負けて後半 1 コアしか使わなくなる。
+const TILE_DEFAULT = 128;
+const _tp = parseInt(new URLSearchParams(location.search).get('tile')||'',10);
+const TILE = (_tp>=32 && _tp<=512) ? _tp : TILE_DEFAULT;
+
+// モデル配信元。GitHub Pages でホストする場合、models/ をリポに置けない (合計 300MB) ので
+// HuggingFace 等の外部 URL を指定できるようにする。末尾スラッシュ必須。
+// 例: ?models=https://huggingface.co/xxx/yyy/resolve/main/
+const MODEL_BASE = new URLSearchParams(location.search).get('models') || 'models/';
+
+let img=null, sess=null, blob=null, backend='wasm', loading=null;
+let SZ=TILE; // dynamic axes モデル前提。固定入力のモデルなら _load で上書きされる。
+const MODELS={
+  x4:    {fn:'RealESRGAN_x4',     s:4, t:'float32'},
+  x4fp16:{fn:'RealESRGAN_x4_fp16',s:4, t:'float16'},
+  x2:    {fn:'RealESRGAN_x2',     s:2, t:'float32'},
+  x2fp16:{fn:'RealESRGAN_x2_fp16',s:2, t:'float16'},
+  x8:    {fn:'RealESRGAN_x8',     s:8, t:'float32'},
+  x8fp16:{fn:'RealESRGAN_x8_fp16',s:8, t:'float16'}
+};
+
+// ── float16 <-> float32 変換 ──
+// Chrome 122+ / Firefox 128+ / Safari 18.2+ には native Float16Array があるので優先。
+// 無い環境 (旧ブラウザ) 用にビット単位の手動変換もフォールバックとして持つ。
+// ort v1.21 は fp16 テンソルの .data を Float16Array で返すため、Uint16Array 前提の
+// ビット変換をかけると値 0.5 → 0、31744..32767 の範囲 → NaN になって黒画像になる。
+const HAS_F16 = typeof Float16Array !== 'undefined';
+const _f32=new Float32Array(1), _u32=new Uint32Array(_f32.buffer);
+function f32to16(val){
+  _f32[0]=val;
+  const bits=_u32[0];
+  const sign=(bits>>16)&0x8000;
+  const exp=(bits>>23)&0xff;
+  const mant=bits&0x7fffff;
+  if(exp===0xff) return sign|0x7c00|(mant?1:0);   // Inf/NaN
+  const e=exp-127+15;
+  if(e>=31) return sign|0x7c00;                    // overflow -> Inf
+  if(e<=0){
+    if(e<-10) return sign;                         // underflow -> 0
+    const m=mant|0x800000;
+    return sign|(m>>(14-e));
+  }
+  return sign|(e<<10)|(mant>>13);
+}
+function f16to32(h){
+  const s=(h&0x8000)?-1:1;
+  const e=(h>>10)&0x1f;
+  const m=h&0x3ff;
+  if(e===0) return m===0 ? s*0 : s*Math.pow(2,-14)*(m/1024);
+  if(e===31) return m ? NaN : s*Infinity;
+  return s*Math.pow(2,e-15)*(1+m/1024);
+}
+
+async function gpuOk(){
+  try{return typeof navigator.gpu!='undefined'&&!!(await navigator.gpu.requestAdapter())}catch(e){return false}
+}
+
+async function fetchWithProgress(p, onPct){
+  const r=await fetch(p);
+  if(!r.ok) throw Error(p+' が見つかりません');
+  const total=+r.headers.get('content-length')||0;
+  if(!r.body || !total) return await r.arrayBuffer();
+  const reader=r.body.getReader();
+  const chunks=[]; let got=0;
+  while(true){
+    const {done,value}=await reader.read();
+    if(done) break;
+    chunks.push(value); got+=value.length;
+    onPct && onPct(got/total);
+  }
+  const out=new Uint8Array(got); let off=0;
+  for(const ch of chunks){ out.set(ch,off); off+=ch.length }
+  return out.buffer;
+}
+
+async function _load(name,ep){
+  if(sess&&sess._n==name&&sess._e==ep)return sess;
+  sess=null;
+  const c=MODELS[name]; if(!c)throw Error('不明なモデル:'+name);
+  const scale=c.s;
+  const p=MODEL_BASE+c.fn+'.onnx';
+  show(true,2);
+  const buf=await fetchWithProgress(p,(pct)=>{
+    set('モデル DL '+Math.round(pct*100)+'%: '+c.fn);
+    show(true, 2+Math.round(pct*13)); // 2..15%
+  });
+  show(true,15);
+  set(ep=='webgpu'?'WebGPU シェーダコンパイル中... (数秒)':'WASM セッション構築中 ('+THREADS+' スレッド, 数秒)...');
+  ort.env.wasm.wasmPaths=WASM;
+  ort.env.wasm.numThreads=ep=='webgpu'?1:THREADS;
+  ort.env.wasm.simd=true;
+  // proxy は v1.21 の JSEP バンドル + COEP で "worker not ready" を起こすため無効化。
+  // numThreads > 1 なら pthread ワーカで並列計算されるので全コアは使われる (推論中は UI ブロック)。
+  ort.env.wasm.proxy=false;
+  const eps=ep=='webgpu'?[{name:'webgpu',preferredLayout:'NHWC'}]:['wasm'];
+  let s;
+  try{
+    s=await ort.InferenceSession.create(buf,{executionProviders:eps,graphOptimizationLevel:'all'});
+  }catch(e){
+    if(ep=='webgpu'){console.warn('WebGPU落ちました、WASMへ:',e);toggle.checked=false;backend='wasm';updLabel();return _load(name,'wasm')}
+    throw e;
+  }
+  // 入力サイズを動的検出 (dynamic axes の時は TILE を使う)
+  try{
+    const md=s.inputMetadata&&s.inputMetadata[s.inputNames[0]];
+    const dims=md&&(md.dimensions||md.shape);
+    SZ=(dims&&dims.length===4&&typeof dims[2]==='number'&&dims[2]>0)?dims[2]:TILE;
+  }catch(_){SZ=TILE}
+  const outSz=SZ*scale;
+  s._n=name; s._e=ep;
+  sess=s;
+  mi.textContent=SZ+'x'+SZ+' -> '+outSz+'x'+outSz+' (x'+scale+', '+(ep=='webgpu'?'WebGPU':'WASM '+THREADS+'T')+')';
+  show(true,20); set('準備OK ('+c.fn+', '+ep+')','success');
+  return sess;
+}
+
+// backend 切替中の二重初期化を直列化
+function load(name,ep){
+  const prev=loading||Promise.resolve();
+  const next=prev.catch(()=>{}).then(()=>_load(name,ep));
+  loading=next;
+  return next;
+}
+
+function pre(img,sx,sy,sw,sh,type){
+  const t=document.createElement('canvas'); t.width=sw; t.height=sh;
+  t.getContext('2d').drawImage(img,sx,sy,sw,sh,0,0,sw,sh);
+  const c=document.createElement('canvas'); c.width=SZ; c.height=SZ;
+  c.getContext('2d').drawImage(t,0,0,sw,sh,0,0,SZ,SZ);
+  const d=c.getContext('2d').getImageData(0,0,SZ,SZ).data,N=SZ*SZ;
+  if(type==='float16'){
+    if(HAS_F16){
+      const f=new Float16Array(3*N);
+      for(let i=0;i<N;i++){f[i]=d[i*4]/255;f[N+i]=d[i*4+1]/255;f[2*N+i]=d[i*4+2]/255}
+      return new ort.Tensor('float16',f,[1,3,SZ,SZ]);
+    }
+    const u=new Uint16Array(3*N);
+    for(let i=0;i<N;i++){u[i]=f32to16(d[i*4]/255);u[N+i]=f32to16(d[i*4+1]/255);u[2*N+i]=f32to16(d[i*4+2]/255)}
+    return new ort.Tensor('float16',u,[1,3,SZ,SZ]);
+  }
+  const f=new Float32Array(3*N);
+  for(let i=0;i<N;i++){f[i]=d[i*4]/255;f[N+i]=d[i*4+1]/255;f[2*N+i]=d[i*4+2]/255}
+  return new ort.Tensor('float32',f,[1,3,SZ,SZ]);
+}
+
+async function run(img_,name,ep){
+  const s=await load(name,ep),c=MODELS[name];
+  const sc=c.s, inN=s.inputNames[0], outN=s.outputNames[0];
+  const stride=Math.max(1,SZ-16);
+  const ow=img_.width*sc,oh=img_.height*sc;
+  const aR=new Float32Array(ow*oh),aG=new Float32Array(ow*oh),aB=new Float32Array(ow*oh),aW=new Float32Array(ow*oh);
+  const tx=Math.max(1,Math.ceil((img_.width-SZ)/stride)+1),ty=Math.max(1,Math.ceil((img_.height-SZ)/stride)+1);
+  const total=tx*ty; let done=0;
+  set('推論中 0/'+total+' ('+ep+')'); pf.style.width='15%';
+  for(let y=0;y<ty;y++)for(let x=0;x<tx;x++){
+    const sx=Math.min(x*stride,Math.max(0,img_.width-SZ)),sy=Math.min(y*stride,Math.max(0,img_.height-SZ));
+    const feeds={}; feeds[inN]=pre(img_,sx,sy,SZ,SZ,c.t);
+    const res=await s.run(feeds),o=res[outN];
+    // 出力が fp16 なら Float32 に展開。Float16Array (native) と Uint16Array (raw bits) の
+    // どちらでも返ってくる可能性があるため両対応。
+    let d=o.data;
+    if(o.type==='float16'){
+      const f=new Float32Array(d.length);
+      if(HAS_F16 && d instanceof Float16Array){
+        for(let i=0;i<d.length;i++) f[i]=d[i];
+      }else if(d instanceof Uint16Array){
+        for(let i=0;i<d.length;i++) f[i]=f16to32(d[i]);
+      }else{
+        for(let i=0;i<d.length;i++) f[i]=d[i];
+      }
+      d=f;
+    }
+    const N=o.dims[2]*o.dims[3];
+    const dx=sx*sc,dy=sy*sc;
+    for(let ty2=0;ty2<o.dims[2];ty2++)for(let tx2=0;tx2<o.dims[3];tx2++){
+      const px=dx+tx2,py=dy+ty2;
+      if(px>=ow||py>=oh)continue;
+      const ti=ty2*o.dims[3]+tx2,oi=py*ow+px;
+      aR[oi]+=d[ti]*255;aG[oi]+=d[N+ti]*255;aB[oi]+=d[2*N+ti]*255;aW[oi]+=1;
+    }
+    done++;pf.style.width=15+(done/total)*80+'%';set('推論中 '+done+'/'+total+' ('+ep+')');
+  }
+  const oc=document.createElement('canvas');oc.width=ow;oc.height=oh;
+  const ctx=oc.getContext('2d'),id=ctx.createImageData(ow,oh);
+  for(let i=0;i<ow*oh;i++){const w=aW[i];
+    if(w>0){id.data[i*4]=Math.min(255,Math.max(0,Math.round(aR[i]/w)));id.data[i*4+1]=Math.min(255,Math.max(0,Math.round(aG[i]/w)));id.data[i*4+2]=Math.min(255,Math.max(0,Math.round(aB[i]/w)))}
+    id.data[i*4+3]=255;
+  }
+  ctx.putImageData(id,0,0);pf.style.width='100%';return oc;
+}
+
+function set(m,c){statusEl.textContent=m;statusEl.className=c||''}
+function show(s,p){progress.style.display=s?'block':'none';if(p!==undefined)pf.style.width=p+'%'}
+function updLabel(){bl.textContent=backend=='webgpu'?'WebGPU':'WASM'}
+
+// 画像/モデル/バックエンド確定時に裏で warm-up。エラーは握りつぶす (次の go() で再試行)。
+function warmup(){
+  const name=ms.value, ep=backend;
+  load(name,ep).catch(e=>console.warn('warmup 失敗:',e));
+}
+
+async function go(){
+  if(!img||upscaleBtn.disabled)return;
+  upscaleBtn.disabled=true;result.classList.remove('visible');
+  try{show(true,1);
+    // sess が既に温まってれば '初期化中' を挟まずいきなり推論表示
+    if(!(sess&&sess._n==ms.value&&sess._e==backend)) set('初期化中...');
+    const oc=await run(img,ms.value,backend);
+    outC.width=oc.width;outC.height=oc.height;outC.getContext('2d').drawImage(oc,0,0);
+    result.classList.add('visible');
+    oc.toBlob(b=>{blob=b},'image/png');
+    set('完了: '+img.width+'x'+img.height+' -> '+oc.width+'x'+oc.height,'success');
+  }catch(e){console.error(e);set('エラー: '+e.message,'error')}
+  finally{upscaleBtn.disabled=!img;setTimeout(()=>show(false),500)}
+}
+
+dropzone.addEventListener('dragover',e=>{e.preventDefault();dropzone.classList.add('drag-over')});
+dropzone.addEventListener('dragleave',()=>dropzone.classList.remove('drag-over'));
+dropzone.addEventListener('drop',e=>{e.preventDefault();dropzone.classList.remove('drag-over');if(e.dataTransfer.files[0])hdl(e.dataTransfer.files[0])});
+dropzone.addEventListener('click',()=>fileInput.click());
+fileInput.addEventListener('change',e=>{if(e.target.files[0])hdl(e.target.files[0])});
+
+function hdl(f){
+  if(!f||!f.type.startsWith('image/'))return;
+  const r=new FileReader();
+  r.onload=e=>{
+    const im=new Image();
+    im.onload=()=>{
+      img=im;preview.src=im.src;preview.style.display='block';inputDisplay.src=im.src;
+      result.classList.remove('visible');upscaleBtn.disabled=false;
+      set(f.name+' ('+im.width+'x'+im.height+') — モデル準備中…','success');
+      warmup();
+    };
+    im.src=e.target.result;
+  };
+  r.readAsDataURL(f);
+}
+
+upscaleBtn.addEventListener('click',go);
+dlBtn.addEventListener('click',()=>{if(blob){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='upscaled.png';a.click()}});
+resetBtn.addEventListener('click',()=>{img=null;blob=null;preview.style.display='none';preview.src='';result.classList.remove('visible');upscaleBtn.disabled=true;set('画像を選択してください','')});
+ms.addEventListener('change',()=>{sess=null;mi.textContent='';if(img)warmup()});
+toggle.addEventListener('change',async()=>{
+  const p=toggle.checked;
+  if(p){const ok=await gpuOk();if(!ok){toggle.checked=false;backend='wasm';updLabel();set('WebGPU使えません','error');return}}
+  backend=p?'webgpu':'wasm';updLabel();sess=null;
+  if(img)warmup();
+});
+
+(async function(){
+  const ok=await gpuOk();
+  toggle.checked=ok;if(!ok)toggle.disabled=true;
+  backend=ok?'webgpu':'wasm';updLabel();
+  const parts=[];
+  parts.push('画像をドロップしてください');
+  if(!CAN_THREAD) parts.push('(WASM 単一スレッド — 全コア使うには serve.py で起動)');
+  else parts.push('(WASM '+THREADS+'T, tile '+TILE+')');
+  set(parts.join(' '));
+})();
+} // main() 終わり
+</script>
+</body>
+</html>

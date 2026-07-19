@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.pem
+*.pth
+python/models/
+python/onnx_models/
+.DS_Store
+# models/*.onnx はリポに含める (GitHub Pages で同一オリジン配信するため)。
+# 変換途中の一時 .onnx を除外したい場合は python/ 側を上で明示的に無視している。
