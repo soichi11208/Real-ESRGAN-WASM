@@ -219,7 +219,7 @@ async function fetchWithProgress(p, onPct){
     const {done,value}=await reader.read();
     if(done) break;
     chunks.push(value); got+=value.length;
-    onPct && onPct(got/total);
+    onPct && onPct(Math.min(got/total,1));
   }
   const out=new Uint8Array(got); let off=0;
   for(const ch of chunks){ out.set(ch,off); off+=ch.length }
@@ -234,8 +234,8 @@ async function _load(name,ep){
   const p=MODEL_BASE+c.fn+'.onnx';
   show(true,2);
   const buf=await fetchWithProgress(p,(pct)=>{
-    set('モデル DL '+Math.round(pct*100)+'%: '+c.fn);
-    show(true, 2+Math.round(pct*13)); // 2..15%
+    set('モデル DL '+Math.min(100,Math.round(pct*100))+'%: '+c.fn);
+    show(true, Math.min(100, 2+Math.round(pct*13))); // 2..15%, clamp 100%
   });
   show(true,15);
   set(ep=='webgpu'?'WebGPU シェーダコンパイル中... (数秒)':'WASM セッション構築中 ('+THREADS+' スレッド, 数秒)...');
@@ -331,7 +331,7 @@ async function run(img_,name,ep){
       const ti=ty2*o.dims[3]+tx2,oi=py*ow+px;
       aR[oi]+=d[ti]*255;aG[oi]+=d[N+ti]*255;aB[oi]+=d[2*N+ti]*255;aW[oi]+=1;
     }
-    done++;pf.style.width=15+(done/total)*80+'%';set('推論中 '+done+'/'+total+' ('+ep+')');
+    done++;pf.style.width=Math.min(100,15+Math.round((done/total)*80))+'%';set('推論中 '+done+'/'+total+' ('+ep+')');
   }
   const oc=document.createElement('canvas');oc.width=ow;oc.height=oh;
   const ctx=oc.getContext('2d'),id=ctx.createImageData(ow,oh);
