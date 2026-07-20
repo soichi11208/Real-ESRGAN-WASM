@@ -1,10 +1,9 @@
 # Real-ESRGAN WebGPU — WASM ブラウザアップスケーラー
 
-> Real-ESRGAN を **ONNX Runtime Web** 経由で WebAssembly (WASM) に変換し、**WebGPU** アクセラレーションでブラウザ上で完全クライアントサイド動作させます。
+Real-ESRGAN を **ONNX Runtime Web** 経由で WebAssembly (WASM) に変換し、**WebGPU** アクセラレーションでブラウザ上で完全クライアントサイド動作させます。
 
-![Real-ESRGAN WebGPU Demo](https://github.com/xororz/web-realesrgan/raw/master/src/assets/demo.jpg)
 
-## 🌟 特徴
+## 特徴
 
 - **完全クライアントサイド** — 画像がサーバーに送信されません。プライバシー完全保護
 - **WebGPU アクセラレーション** — 対応ブラウザでは GPU で高速推論
@@ -13,7 +12,11 @@
 - **複数モデル** — 高品質・高速・アニメ用など選択可能
 - **アルファチャンネル対応** — PNG 透過画像もアップスケール可能
 
-## 🚀 クイックスタート
+## クイックスタート
+
+動かしたいだけならここにアクセスするのが早いです。
+https://soichi11208.github.io/Real-ESRGAN-WASM/
+以下は自分でホストする方法です。
 
 ### 前提条件
 
@@ -54,7 +57,7 @@ npm run dev
 
 > **Note:** 上記は同じ ONNX ファイルを参照しています。実際のプロダクション用途では各モデルを個別に変換してください。
 
-## 🔧 アーキテクチャ
+## アーキテクチャ
 
 ```
 PyTorch (.pth)
@@ -78,7 +81,7 @@ ONNX Runtime Web (onnxruntime-web)
 4. **後処理** — タイル結合、色補正、キャンバス描画
 5. **出力** — プレビュー表示 & PNG ダウンロード
 
-## 🧪 自分で ONNX 変換する場合
+## 自分で ONNX 変換する場合
 
 Python 環境で `python/export_onnx.py` を使用します：
 
@@ -105,7 +108,7 @@ chmod +x export_all_models.sh
 bash export_all_models.sh
 ```
 
-## 🌐 バックエンド比較
+## バックエンド比較
 
 | バックエンド | 速度 | 対応ブラウザ | 初期化時間 |
 |-------------|------|------------|-----------|
@@ -114,7 +117,7 @@ bash export_all_models.sh
 
 WebGPU を使用するには HTTPS が必要です。自己証明書でも動作します。
 
-## 📦 プロダクションビルド
+## プロダクションビルド
 
 ```bash
 npm run build
@@ -139,21 +142,21 @@ Content-Security-Policy:
   img-src 'self' blob: data:;
 ```
 
-## 📚 技術スタック
+## 技術スタック
 
 - **ONNX Runtime Web** — WebAssembly + WebGPU 推論エンジン
 - **WebGPU** — GPU コンピュート API (Dawn / wgpu 実装)
 - **WebAssembly (WASM)** — ポータブルバイナリ実行環境
 - **RRDBNet** — Real-ESRGAN のベースアーキテクチャ (Residual-in-Residual Dense Block)
 
-## 🔗 関連プロジェクト
+## 関連プロジェクト
 
 - [Real-ESRGAN](https://github.com/xinntao/Real-ESRGAN) — オリジナル PyTorch 実装 (Tencent ARC)
 - [web-realesrgan](https://github.com/xororz/web-realesrgan) — TensorFlow.js 版ブラウザ Real-ESRGAN
 - [ONNX Runtime Web](https://github.com/microsoft/onnxruntime) — Microsoft 製 ONNX 推論ランタイム
 - [LiteRT.js](https://developers.googleblog.com/litertjs-googles-high-performance-web-ai-inference/) — Google 製 Web AI 推論 (2026年7月リリース)
 
-## 📄 ライセンス
+## ライセンス
 
 このプロジェクト自身のコード (`index.html`, `serve.py`, ドキュメント類) は
 [WTFPL](./LICENSE) です。
